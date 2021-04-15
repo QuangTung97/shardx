@@ -11,10 +11,8 @@ type PartitionID uint32
 // LeaseID ...
 type LeaseID int64
 
-// NodeInfo ...
-type NodeInfo struct {
-	Address string
-}
+// Revision ...
+type Revision int64
 
 //go:generate moq -out generated_moq_test.go . Timer
 

@@ -19,17 +19,21 @@ func newCoreOptionsTest() coreOptions {
 }
 
 func newCoreTest() *core {
-	return newCore(12000, "/sample", NodeInfo{}, newCoreOptionsTest())
+	return newCore(12000, "/sample", "", 0, newCoreOptionsTest())
 }
 
-func newCoreWithNode(prefix string, id NodeID, info NodeInfo) *core {
-	return newCore(id, prefix, info, newCoreOptionsTest())
+func newCoreWithNode(prefix string, id NodeID, info string) *core {
+	return newCore(id, prefix, info, 0, newCoreOptionsTest())
 }
 
 func newCoreWithPutNodeTimer(id NodeID, prefix string, timer Timer) *core {
 	opts := defaultCoreOptions()
 	opts.putNodeTimer = timer
-	return newCore(id, prefix, NodeInfo{}, opts)
+	return newCore(id, prefix, "", 0, opts)
+}
+
+func newCoreWithPartitions(id NodeID, prefix string, partitionCount PartitionID) *core {
+	return newCore(id, prefix, "", partitionCount, newCoreOptionsTest())
 }
 
 func newTimerMock() *TimerMock {
@@ -62,7 +66,7 @@ func TestCore_Run__Context_Cancelled(t *testing.T) {
 func TestCore_Run__Update_LeaseID__Need_Put_Node(t *testing.T) {
 	t.Parallel()
 
-	c := newCoreWithNode("/sample", 8, NodeInfo{Address: "some-addr"})
+	c := newCoreWithNode("/sample", 8, "some-addr")
 	ctx := newContext()
 
 	c.updateLeaseID(1000)
@@ -70,10 +74,8 @@ func TestCore_Run__Update_LeaseID__Need_Put_Node(t *testing.T) {
 
 	assert.Equal(t, true, output.needPutNode)
 	assert.Equal(t, putNodeCmd{
-		key: "/sample/node/8",
-		value: NodeInfo{
-			Address: "some-addr",
-		},
+		key:     "/sample/node/8",
+		value:   "some-addr",
 		leaseID: 1000,
 	}, output.putNodeCmd)
 }
@@ -81,7 +83,7 @@ func TestCore_Run__Update_LeaseID__Need_Put_Node(t *testing.T) {
 func TestCore_Run__Update_LeaseID__While_Requesting__Do_Nothing(t *testing.T) {
 	t.Parallel()
 
-	c := newCoreWithNode("/sample", 8, NodeInfo{Address: "some-addr"})
+	c := newCoreWithNode("/sample", 8, "some-addr")
 	ctx := newContext()
 
 	c.updateLeaseID(1000)
@@ -95,7 +97,7 @@ func TestCore_Run__Update_LeaseID__While_Requesting__Do_Nothing(t *testing.T) {
 func TestCore_Run__Update_LeaseID__Then_Finish_Put_Node_OK__Do_Nothing(t *testing.T) {
 	t.Parallel()
 
-	c := newCoreWithNode("/sample", 8, NodeInfo{Address: "some-addr"})
+	c := newCoreWithNode("/sample", 8, "some-addr")
 	ctx := newContext()
 
 	c.updateLeaseID(1000)
@@ -187,7 +189,7 @@ func TestCore_Run__Finish_Put_Node_Error__Update_Lease__Stop_Timer(t *testing.T)
 func TestCore_Run__Finish_Put_Node_OK__After_Update_Lease__Put_Node_Again(t *testing.T) {
 	t.Parallel()
 
-	c := newCoreWithNode("/sample", 8, NodeInfo{Address: "some-addr"})
+	c := newCoreWithNode("/sample", 8, "some-addr")
 	ctx := newContext()
 
 	c.updateLeaseID(1000)
@@ -200,11 +202,115 @@ func TestCore_Run__Finish_Put_Node_OK__After_Update_Lease__Put_Node_Again(t *tes
 	assert.Equal(t, runOutput{
 		needPutNode: true,
 		putNodeCmd: putNodeCmd{
-			key: "/sample/node/8",
-			value: NodeInfo{
-				Address: "some-addr",
-			},
+			key:     "/sample/node/8",
+			value:   "some-addr",
 			leaseID: 2000,
+		},
+	}, output)
+}
+
+func TestCore_Run__Recv_Node_Events__Not_Leader__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithNode("/sample", 8, "some-addr")
+	ctx := newContext()
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__SetLeader__With_No_Nodes__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 4)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+	}, output)
+}
+
+func TestCore_Run__SetLeader__With_2_Nodes__Update_Expected_Partitions(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.setLeader("/sample/leader/1234", 550)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpected: []updateExpected{
+			{
+				key:       "/sample/expected/0",
+				value:     "8",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+			{
+				key:       "/sample/expected/1",
+				value:     "8",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+			{
+				key:       "/sample/expected/2",
+				value:     "10",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+		},
+	}, output)
+}
+
+func TestCore_Run__Recv_Node_Events__With_Leader__Update_Expected_Partitions(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpected: []updateExpected{
+			{
+				key:       "/sample/expected/0",
+				value:     "8",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+			{
+				key:       "/sample/expected/1",
+				value:     "8",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+			{
+				key:       "/sample/expected/2",
+				value:     "10",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
 		},
 	}, output)
 }
