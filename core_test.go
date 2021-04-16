@@ -491,6 +491,93 @@ func TestCore_Run__Leader_Changed__Reallocate_Partitions(t *testing.T) {
 	}, output)
 }
 
+func TestCore_Run__Recv_Events__When_Not_Yet_Finish_Update_Expected__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType:   eventTypePut,
+			partitionID: 0,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 1,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 2,
+			nodeID:      10,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 13, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__Leader_Changed__After_Already_Update__Update_Expected_Again(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateExpected(nil)
+	_ = c.run(ctx)
+
+	c.setLeader("/sample/leader/4567", 660)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpected: []updateExpected{
+			{
+				key:       "/sample/expected/0",
+				value:     "8",
+				leaderKey: "/sample/leader/4567",
+				leaderRev: 660,
+			},
+			{
+				key:       "/sample/expected/1",
+				value:     "8",
+				leaderKey: "/sample/leader/4567",
+				leaderRev: 660,
+			},
+			{
+				key:       "/sample/expected/2",
+				value:     "10",
+				leaderKey: "/sample/leader/4567",
+				leaderRev: 660,
+			},
+		},
+	}, output)
+}
+
 // HELPERS
 
 func TestNodesEqual(t *testing.T) {

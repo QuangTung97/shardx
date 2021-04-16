@@ -61,6 +61,7 @@ type putNodeState struct {
 
 type updateExpectedState struct {
 	requesting bool
+	leader     leaderInfo
 	nodes      map[NodeID]struct{}
 }
 
@@ -213,13 +214,14 @@ func (c *core) resetPutNodeState() {
 }
 
 func (c *core) computePutNodeActions(output *runOutput) {
+	if c.putNodeState.requesting {
+		return
+	}
+
 	if c.leaseID == c.putNodeState.leaseID {
 		return
 	}
 
-	if c.putNodeState.requesting {
-		return
-	}
 	c.putNodeState = putNodeState{
 		requesting: true,
 		leaseID:    c.leaseID,
@@ -285,12 +287,14 @@ func (c *core) computeExpectedPartitionActions(output *runOutput) {
 		return
 	}
 
-	if nodesEqual(c.updateExpectedState.nodes, c.nodes) {
+	if nodesEqual(c.updateExpectedState.nodes, c.nodes) &&
+		c.updateExpectedState.leader == c.leader {
 		return
 	}
 
 	c.updateExpectedState = updateExpectedState{
 		requesting: true,
+		leader:     c.leader,
 		nodes:      cloneNodes(c.nodes),
 	}
 
