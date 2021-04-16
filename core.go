@@ -252,9 +252,6 @@ func computeUpdateExpected(
 	leader leaderInfo,
 ) ([]updateExpected, leaderInfo) {
 	current := map[NodeID][]PartitionID{}
-	for n := range nodes {
-		current[n] = nil
-	}
 
 	for partitionID, p := range expected {
 		if p.nodeID == 0 {
@@ -263,7 +260,7 @@ func computeUpdateExpected(
 		current[p.nodeID] = append(current[p.nodeID], PartitionID(partitionID))
 	}
 
-	expectedFinalState := allocatePartitions(current, partitionCount)
+	expectedFinalState := allocatePartitions(current, nodes, partitionCount)
 	var result []updateExpected
 	for n, partitions := range expectedFinalState {
 		currentPartitions := current[n]
@@ -332,7 +329,11 @@ func (c *core) handleFinishPutNode(err error) {
 
 func (c *core) handleNodeEvents(ev nodeEvents) {
 	for _, e := range ev.events {
-		c.nodes[e.nodeID] = struct{}{}
+		if e.eventType == eventTypePut {
+			c.nodes[e.nodeID] = struct{}{}
+		} else {
+			delete(c.nodes, e.nodeID)
+		}
 	}
 }
 

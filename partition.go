@@ -63,14 +63,15 @@ func computeFreePartitions(
 }
 
 func allocatePartitions(
-	current map[NodeID][]PartitionID, partitionCount PartitionID,
+	current map[NodeID][]PartitionID,
+	currentNodes map[NodeID]struct{}, partitionCount PartitionID,
 ) map[NodeID][]PartitionID {
-	if len(current) == 0 {
+	if len(currentNodes) == 0 {
 		return map[NodeID][]PartitionID{}
 	}
 
-	nodes := make([]NodeID, 0, len(current))
-	for n := range current {
+	nodes := make([]NodeID, 0, len(currentNodes))
+	for n := range currentNodes {
 		nodes = append(nodes, n)
 	}
 	sort.Sort(sortNodeID(nodes))
@@ -83,8 +84,8 @@ func allocatePartitions(
 	freePartitions := computeFreePartitions(nodes, current, partitionCount, higherCount, higherValue, lowerValue)
 
 	result := map[NodeID][]PartitionID{}
-	for key, value := range current {
-		result[key] = value
+	for _, key := range nodes {
+		result[key] = current[key]
 	}
 
 	for i, n := range nodes {

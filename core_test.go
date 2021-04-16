@@ -317,6 +317,66 @@ func TestCore_Run__Recv_Node_Events__With_Leader__Update_Expected_Partitions(t *
 	}, output)
 }
 
+func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Reallocate_Expected_Partitions(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateExpected(nil)
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType:   eventTypePut,
+			partitionID: 0,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 1,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 2,
+			nodeID:      10,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 8, eventType: eventTypeDelete},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
+		updateExpected: []updateExpected{
+			{
+				key:   "/sample/expected/0",
+				value: "10",
+			},
+			{
+				key:   "/sample/expected/1",
+				value: "10",
+			},
+		},
+	}, output)
+}
+
 func TestCore_Run__Recv_Node_Events__Second_Times__First_Not_Yet_Completed__Do_Nothing(t *testing.T) {
 	t.Parallel()
 
@@ -434,9 +494,6 @@ func TestCore_Run__Finish_Update_Expected_Error__Set_Timer__Then_Timer_Expired__
 	}, output)
 }
 
-// TODO Delete Node
-// TODO Delete Expected Partition
-
 func TestCore_Run__Finish_Update_Expected_Error__Recv_Node_Event__Stop_Timer(t *testing.T) {
 	t.Parallel()
 
@@ -511,8 +568,6 @@ func TestCore_Run__Recv_Expected_Partition_Events__Not_Leader__Do_Nothing(t *tes
 
 	assert.Equal(t, runOutput{}, output)
 }
-
-// TODO Finish Update Expected Error
 
 func TestCore_Run__Recv_Node_Events_Second_Times__After_Finish_Update_Expected__Reallocate_Partitions(t *testing.T) {
 	t.Parallel()
