@@ -233,8 +233,7 @@ func TestCore_Run__SetLeader__With_No_Nodes__Do_Nothing(t *testing.T) {
 	c.setLeader("/sample/leader/1234", 550)
 	output := c.run(ctx)
 
-	assert.Equal(t, runOutput{
-	}, output)
+	assert.Equal(t, runOutput{}, output)
 }
 
 func TestCore_Run__SetLeader__With_2_Nodes__Update_Expected_Partitions(t *testing.T) {
@@ -313,4 +312,238 @@ func TestCore_Run__Recv_Node_Events__With_Leader__Update_Expected_Partitions(t *
 			},
 		},
 	}, output)
+}
+
+func TestCore_Run__Recv_Node_Events__Second_Times__First_Not_Yet_Completed__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 9, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__Finish_Update_Expected__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateExpected(nil)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__Recv_Expected_Partition_Events__Not_Leader__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType:   eventTypePut,
+			partitionID: 0,
+			nodeID:      11,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 1,
+			nodeID:      13,
+		},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+// TODO Finish Update Expected Error
+
+func TestCore_Run__Recv_Node_Events_Second_Times__After_Finish_Update_Expected__Reallocate_Partitions(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType:   eventTypePut,
+			partitionID: 0,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 1,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 2,
+			nodeID:      10,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateExpected(nil)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 13, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpected: []updateExpected{
+			{
+				key:       "/sample/expected/1",
+				value:     "13",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+		},
+	}, output)
+}
+
+func TestCore_Run__Leader_Changed__Reallocate_Partitions(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType:   eventTypePut,
+			partitionID: 0,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 1,
+			nodeID:      8,
+		},
+		{
+			eventType:   eventTypePut,
+			partitionID: 2,
+			nodeID:      10,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateExpected(nil)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 13, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpected: []updateExpected{
+			{
+				key:       "/sample/expected/1",
+				value:     "13",
+				leaderKey: "/sample/leader/1234",
+				leaderRev: 550,
+			},
+		},
+	}, output)
+}
+
+// HELPERS
+
+func TestNodesEqual(t *testing.T) {
+	table := []struct {
+		name   string
+		a      map[NodeID]struct{}
+		b      map[NodeID]struct{}
+		result bool
+	}{
+		{
+			name:   "both-empty",
+			result: true,
+		},
+		{
+			name: "a-empty",
+			b: map[NodeID]struct{}{
+				10: {},
+			},
+			result: false,
+		},
+		{
+			name: "b-empty",
+			a: map[NodeID]struct{}{
+				12: {},
+			},
+			result: false,
+		},
+		{
+			name: "a-b-two-elements-eq",
+			a: map[NodeID]struct{}{
+				12: {}, 20: {},
+			},
+			b: map[NodeID]struct{}{
+				12: {}, 20: {},
+			},
+			result: true,
+		},
+		{
+			name: "a-b-two-elements-not-eq",
+			a: map[NodeID]struct{}{
+				12: {}, 21: {},
+			},
+			b: map[NodeID]struct{}{
+				12: {}, 20: {},
+			},
+			result: false,
+		},
+	}
+
+	for _, e := range table {
+		t.Run(e.name, func(t *testing.T) {
+			result := nodesEqual(e.a, e.b)
+			assert.Equal(t, e.result, result)
+		})
+	}
 }
