@@ -166,10 +166,8 @@ type putNodeCmd struct {
 }
 
 type updateExpected struct {
-	key       string
-	value     string
-	leaderKey string
-	leaderRev Revision
+	key   string
+	value string
 }
 
 type sortUpdateExpected []updateExpected
@@ -192,7 +190,8 @@ type runOutput struct {
 	needPutNode bool
 	putNodeCmd  putNodeCmd
 
-	updateExpected []updateExpected
+	updateExpectedLeader leaderInfo
+	updateExpected       []updateExpected
 }
 
 func computePutNodeCmd(
@@ -240,7 +239,7 @@ func computeUpdateExpected(
 	partitionCount PartitionID, prefix string,
 	nodes map[NodeID]struct{}, expected []expectedState,
 	leader leaderInfo,
-) []updateExpected {
+) ([]updateExpected, leaderInfo) {
 	current := map[NodeID][]PartitionID{}
 	for n := range nodes {
 		current[n] = nil
@@ -263,16 +262,14 @@ func computeUpdateExpected(
 
 		for _, p := range partitions[len(currentPartitions):] {
 			result = append(result, updateExpected{
-				key:       fmt.Sprintf("%s/expected/%d", prefix, p),
-				value:     fmt.Sprintf("%d", n),
-				leaderKey: leader.key,
-				leaderRev: leader.rev,
+				key:   fmt.Sprintf("%s/expected/%d", prefix, p),
+				value: fmt.Sprintf("%d", n),
 			})
 		}
 	}
 
 	sort.Sort(sortUpdateExpected(result))
-	return result
+	return result, leader
 }
 
 func (c *core) computeExpectedPartitionActions(output *runOutput) {
@@ -298,7 +295,8 @@ func (c *core) computeExpectedPartitionActions(output *runOutput) {
 		nodes:      cloneNodes(c.nodes),
 	}
 
-	output.updateExpected = computeUpdateExpected(c.partitionCount, c.prefix, c.nodes, c.expected, c.leader)
+	output.updateExpected, output.updateExpectedLeader = computeUpdateExpected(
+		c.partitionCount, c.prefix, c.nodes, c.expected, c.leader)
 }
 
 func (c *core) computeActions() runOutput {

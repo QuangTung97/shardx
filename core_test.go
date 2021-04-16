@@ -252,24 +252,22 @@ func TestCore_Run__SetLeader__With_2_Nodes__Update_Expected_Partitions(t *testin
 	output := c.run(ctx)
 
 	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
 		updateExpected: []updateExpected{
 			{
-				key:       "/sample/expected/0",
-				value:     "8",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/0",
+				value: "8",
 			},
 			{
-				key:       "/sample/expected/1",
-				value:     "8",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/1",
+				value: "8",
 			},
 			{
-				key:       "/sample/expected/2",
-				value:     "10",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/2",
+				value: "10",
 			},
 		},
 	}, output)
@@ -291,24 +289,22 @@ func TestCore_Run__Recv_Node_Events__With_Leader__Update_Expected_Partitions(t *
 	output := c.run(ctx)
 
 	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
 		updateExpected: []updateExpected{
 			{
-				key:       "/sample/expected/0",
-				value:     "8",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/0",
+				value: "8",
 			},
 			{
-				key:       "/sample/expected/1",
-				value:     "8",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/1",
+				value: "8",
 			},
 			{
-				key:       "/sample/expected/2",
-				value:     "10",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/2",
+				value: "10",
 			},
 		},
 	}, output)
@@ -426,12 +422,14 @@ func TestCore_Run__Recv_Node_Events_Second_Times__After_Finish_Update_Expected__
 	output := c.run(ctx)
 
 	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
 		updateExpected: []updateExpected{
 			{
-				key:       "/sample/expected/1",
-				value:     "13",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/1",
+				value: "13",
 			},
 		},
 	}, output)
@@ -480,12 +478,14 @@ func TestCore_Run__Leader_Changed__Reallocate_Partitions(t *testing.T) {
 	output := c.run(ctx)
 
 	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
 		updateExpected: []updateExpected{
 			{
-				key:       "/sample/expected/1",
-				value:     "13",
-				leaderKey: "/sample/leader/1234",
-				leaderRev: 550,
+				key:   "/sample/expected/1",
+				value: "13",
 			},
 		},
 	}, output)
@@ -555,24 +555,22 @@ func TestCore_Run__Leader_Changed__After_Already_Update__Update_Expected_Again(t
 	output := c.run(ctx)
 
 	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/4567",
+			rev: 660,
+		},
 		updateExpected: []updateExpected{
 			{
-				key:       "/sample/expected/0",
-				value:     "8",
-				leaderKey: "/sample/leader/4567",
-				leaderRev: 660,
+				key:   "/sample/expected/0",
+				value: "8",
 			},
 			{
-				key:       "/sample/expected/1",
-				value:     "8",
-				leaderKey: "/sample/leader/4567",
-				leaderRev: 660,
+				key:   "/sample/expected/1",
+				value: "8",
 			},
 			{
-				key:       "/sample/expected/2",
-				value:     "10",
-				leaderKey: "/sample/leader/4567",
-				leaderRev: 660,
+				key:   "/sample/expected/2",
+				value: "10",
 			},
 		},
 	}, output)
