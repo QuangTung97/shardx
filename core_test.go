@@ -15,6 +15,7 @@ func newContext() context.Context {
 func newCoreOptionsTest() coreOptions {
 	opts := defaultCoreOptions()
 	opts.putNodeTimer = newTimerMock()
+	opts.updateExpectedTimer = newTimerMock()
 	return opts
 }
 
@@ -27,13 +28,19 @@ func newCoreWithNode(prefix string, id NodeID, info string) *core {
 }
 
 func newCoreWithPutNodeTimer(id NodeID, prefix string, timer Timer) *core {
-	opts := defaultCoreOptions()
+	opts := newCoreOptionsTest()
 	opts.putNodeTimer = timer
 	return newCore(id, prefix, "", 0, opts)
 }
 
 func newCoreWithPartitions(id NodeID, prefix string, partitionCount PartitionID) *core {
 	return newCore(id, prefix, "", partitionCount, newCoreOptionsTest())
+}
+
+func newCoreWithPartitionsAndExpectedTimer(id NodeID, prefix string, partitionCount PartitionID, timer Timer) *core {
+	opts := newCoreOptionsTest()
+	opts.updateExpectedTimer = timer
+	return newCore(id, prefix, "", partitionCount, opts)
 }
 
 func newTimerMock() *TimerMock {
@@ -354,6 +361,134 @@ func TestCore_Run__Finish_Update_Expected__Do_Nothing(t *testing.T) {
 	assert.Equal(t, runOutput{}, output)
 }
 
+func TestCore_Run__Finish_Update_Expected_Error__Set_Timer(t *testing.T) {
+	t.Parallel()
+
+	timer := newTimerMock()
+
+	c := newCoreWithPartitionsAndExpectedTimer(12, "/sample", 3, timer)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	timer.ResetFunc = func() {}
+
+	c.finishUpdateExpected(errors.New("finish-update-expected-error"))
+	output := c.run(ctx)
+
+	assert.Equal(t, 1, len(timer.ResetCalls()))
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__Finish_Update_Expected_Error__Set_Timer__Then_Timer_Expired__Retry_Update_Expected(t *testing.T) {
+	t.Parallel()
+
+	timer := newTimerMock()
+
+	c := newCoreWithPartitionsAndExpectedTimer(12, "/sample", 3, timer)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	timer.ResetFunc = func() {}
+
+	c.finishUpdateExpected(errors.New("finish-update-expected-error"))
+	_ = c.run(ctx)
+
+	timerExpire(timer)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
+		updateExpected: []updateExpected{
+			{
+				key:   "/sample/expected/0",
+				value: "8",
+			},
+			{
+				key:   "/sample/expected/1",
+				value: "8",
+			},
+			{
+				key:   "/sample/expected/2",
+				value: "10",
+			},
+		},
+	}, output)
+}
+
+// TODO Delete Node
+// TODO Delete Expected Partition
+
+func TestCore_Run__Finish_Update_Expected_Error__Recv_Node_Event__Stop_Timer(t *testing.T) {
+	t.Parallel()
+
+	timer := newTimerMock()
+
+	c := newCoreWithPartitionsAndExpectedTimer(12, "/sample", 3, timer)
+	ctx := newContext()
+
+	c.setLeader("/sample/leader/1234", 550)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 10, eventType: eventTypePut},
+		{nodeID: 8, eventType: eventTypePut},
+	})
+	_ = c.run(ctx)
+
+	timer.ResetFunc = func() {}
+
+	c.finishUpdateExpected(errors.New("finish-update-expected-error"))
+	_ = c.run(ctx)
+
+	timer.StopFunc = func() {}
+
+	c.recvNodeEvents([]nodeEvent{
+		{nodeID: 9, eventType: eventTypePut},
+	})
+	output := c.run(ctx)
+
+	assert.Equal(t, 1, len(timer.StopCalls()))
+	assert.Equal(t, runOutput{
+		updateExpectedLeader: leaderInfo{
+			key: "/sample/leader/1234",
+			rev: 550,
+		},
+		updateExpected: []updateExpected{
+			{
+				key:   "/sample/expected/0",
+				value: "8",
+			},
+			{
+				key:   "/sample/expected/1",
+				value: "9",
+			},
+			{
+				key:   "/sample/expected/2",
+				value: "10",
+			},
+		},
+	}, output)
+}
+
 func TestCore_Run__Recv_Expected_Partition_Events__Not_Leader__Do_Nothing(t *testing.T) {
 	t.Parallel()
 
@@ -625,8 +760,11 @@ func TestNodesEqual(t *testing.T) {
 		},
 	}
 
-	for _, e := range table {
+	for _, entry := range table {
+		e := entry
 		t.Run(e.name, func(t *testing.T) {
+			t.Parallel()
+
 			result := nodesEqual(e.a, e.b)
 			assert.Equal(t, e.result, result)
 		})

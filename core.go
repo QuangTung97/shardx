@@ -43,8 +43,9 @@ type expectedEvents struct {
 // STRUCTS
 
 type coreOptions struct {
-	chanSize     int
-	putNodeTimer Timer
+	chanSize            int
+	putNodeTimer        Timer
+	updateExpectedTimer Timer
 }
 
 func defaultCoreOptions() coreOptions {
@@ -92,23 +93,29 @@ func nodesEqual(a, b map[NodeID]struct{}) bool {
 }
 
 type core struct {
+	// configure
 	prefix string
 
 	selfNodeID     NodeID
 	selfNodeInfo   string
 	partitionCount PartitionID
 
+	// Channel
 	leaseChan         chan LeaseID
 	finishPutNodeChan chan error
 	nodeEventsChan    chan nodeEvents
 
 	leaderChan chan leaderInfo
 
+	finishExpectedChan chan error
+	expectedEventsChan chan expectedEvents
+
+	// Timer
 	putNodeTimerRunning bool
 	putNodeTimer        Timer
 
-	finishExpectedChan chan error
-	expectedEventsChan chan expectedEvents
+	updateExpectedTimerRunning bool
+	updateExpectedTimer        Timer
 
 	// state
 	leaseID      LeaseID
@@ -124,21 +131,25 @@ type core struct {
 
 func newCore(nodeID NodeID, prefix string, info string, partitionCount PartitionID, opts coreOptions) *core {
 	return &core{
+		// configure
 		prefix:         prefix,
 		selfNodeID:     nodeID,
 		selfNodeInfo:   info,
 		partitionCount: partitionCount,
 
+		// channel
 		leaseChan:         make(chan LeaseID, opts.chanSize),
 		finishPutNodeChan: make(chan error, opts.chanSize),
 		nodeEventsChan:    make(chan nodeEvents, opts.chanSize),
 
 		leaderChan: make(chan leaderInfo, opts.chanSize),
 
-		putNodeTimer: opts.putNodeTimer,
-
 		finishExpectedChan: make(chan error, opts.chanSize),
 		expectedEventsChan: make(chan expectedEvents, opts.chanSize),
+
+		// timer
+		putNodeTimer:        opts.putNodeTimer,
+		updateExpectedTimer: opts.updateExpectedTimer,
 
 		// state
 		leaseID: 0,
@@ -295,6 +306,10 @@ func (c *core) computeExpectedPartitionActions(output *runOutput) {
 		nodes:      cloneNodes(c.nodes),
 	}
 
+	if c.updateExpectedTimerRunning {
+		c.updateExpectedTimer.Stop()
+	}
+
 	output.updateExpected, output.updateExpectedLeader = computeUpdateExpected(
 		c.partitionCount, c.prefix, c.nodes, c.expected, c.leader)
 }
@@ -318,6 +333,21 @@ func (c *core) handleFinishPutNode(err error) {
 func (c *core) handleNodeEvents(ev nodeEvents) {
 	for _, e := range ev.events {
 		c.nodes[e.nodeID] = struct{}{}
+	}
+}
+
+func (c *core) handleFinishUpdateExpected(err error) {
+	c.updateExpectedState.requesting = false
+
+	if err != nil {
+		c.updateExpectedTimerRunning = true
+		c.updateExpectedTimer.Reset()
+	}
+}
+
+func (c *core) resetUpdateExpectedState() {
+	c.updateExpectedState = updateExpectedState{
+		requesting: false,
 	}
 }
 
@@ -347,8 +377,12 @@ func (c *core) run(ctx context.Context) runOutput {
 	case leader := <-c.leaderChan:
 		c.leader = leader
 
-	case <-c.finishExpectedChan:
-		c.updateExpectedState.requesting = false
+	case err := <-c.finishExpectedChan:
+		c.handleFinishUpdateExpected(err)
+
+	case <-c.updateExpectedTimer.Chan():
+		c.updateExpectedTimerRunning = false
+		c.resetUpdateExpectedState()
 
 	case ev := <-c.expectedEventsChan:
 		c.handleExpectedEvents(ev)
