@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -31,13 +33,24 @@ type nodeEvents struct {
 }
 
 type expectedEvent struct {
-	eventType   eventType
-	partitionID PartitionID
-	nodeID      NodeID
+	eventType eventType
+	key       string
+	value     string
+}
+
+type currentEvent struct {
+	eventType eventType
+	key       string
+	value     string
+	leaseID   LeaseID
 }
 
 type expectedEvents struct {
 	events []expectedEvent
+}
+
+type currentEvents struct {
+	events []currentEvent
 }
 
 // STRUCTS
@@ -46,6 +59,7 @@ type coreOptions struct {
 	chanSize            int
 	putNodeTimer        Timer
 	updateExpectedTimer Timer
+	updateCurrentTimer  Timer
 }
 
 func defaultCoreOptions() coreOptions {
@@ -64,10 +78,27 @@ type updateExpectedState struct {
 	requesting bool
 	leader     leaderInfo
 	nodes      map[NodeID]struct{}
+	completed  map[string]string
+}
+
+type completedCurrentKey struct {
+	key   string
+	value string
+}
+
+type updateCurrentState struct {
+	requesting bool
+	leaseID    LeaseID
+	expected   []expectedState
+	completed  map[completedCurrentKey]struct{}
 }
 
 type expectedState struct {
 	// zero means node is invalid
+	nodeID NodeID
+}
+
+type currentState struct {
 	nodeID NodeID
 }
 
@@ -110,12 +141,17 @@ type core struct {
 	finishExpectedChan chan error
 	expectedEventsChan chan expectedEvents
 
+	finishCurrentChan chan error
+	currentEventsChan chan currentEvents
+
 	// Timer
 	putNodeTimerRunning bool
 	putNodeTimer        Timer
 
 	updateExpectedTimerRunning bool
 	updateExpectedTimer        Timer
+
+	updateCurrentTimer Timer
 
 	// state
 	leaseID      LeaseID
@@ -125,8 +161,11 @@ type core struct {
 
 	updateExpectedState updateExpectedState
 
+	updateCurrentState updateCurrentState
+
 	nodes    map[NodeID]struct{}
 	expected []expectedState
+	current  []currentState
 }
 
 func newCore(nodeID NodeID, prefix string, info string, partitionCount PartitionID, opts coreOptions) *core {
@@ -147,9 +186,13 @@ func newCore(nodeID NodeID, prefix string, info string, partitionCount Partition
 		finishExpectedChan: make(chan error, opts.chanSize),
 		expectedEventsChan: make(chan expectedEvents, opts.chanSize),
 
+		finishCurrentChan: make(chan error, opts.chanSize),
+		currentEventsChan: make(chan currentEvents, opts.chanSize),
+
 		// timer
 		putNodeTimer:        opts.putNodeTimer,
 		updateExpectedTimer: opts.updateExpectedTimer,
+		updateCurrentTimer:  opts.updateCurrentTimer,
 
 		// state
 		leaseID: 0,
@@ -161,12 +204,15 @@ func newCore(nodeID NodeID, prefix string, info string, partitionCount Partition
 			key: "",
 			rev: 0,
 		},
-		updateExpectedState: updateExpectedState{
+		updateExpectedState: updateExpectedState{},
+		updateCurrentState: updateCurrentState{
 			requesting: false,
+			expected:   make([]expectedState, partitionCount),
 		},
 
 		nodes:    map[NodeID]struct{}{},
 		expected: make([]expectedState, partitionCount),
+		current:  make([]currentState, partitionCount),
 	}
 }
 
@@ -177,6 +223,11 @@ type putNodeCmd struct {
 }
 
 type updateExpected struct {
+	key   string
+	value string
+}
+
+type updateCurrent struct {
 	key   string
 	value string
 }
@@ -203,6 +254,11 @@ type runOutput struct {
 
 	updateExpectedLeader leaderInfo
 	updateExpected       []updateExpected
+
+	updateCurrentLeaseID LeaseID
+	updateCurrent        []updateCurrent
+
+	startPartitions []PartitionID
 }
 
 func computePutNodeCmd(
@@ -276,18 +332,23 @@ func computeUpdateExpected(
 		}
 	}
 
+	if len(result) == 0 {
+		return nil, leaderInfo{}
+	}
+
 	sort.Sort(sortUpdateExpected(result))
 	return result, leader
 }
 
 func (c *core) computeExpectedPartitionActions(output *runOutput) {
-	if c.updateExpectedState.requesting {
+	if c.updateExpectedState.requesting || len(c.updateExpectedState.completed) > 0 {
 		return
 	}
 
 	if len(c.nodes) == 0 {
 		return
 	}
+
 	if c.leader.rev == 0 {
 		return
 	}
@@ -309,12 +370,104 @@ func (c *core) computeExpectedPartitionActions(output *runOutput) {
 
 	output.updateExpected, output.updateExpectedLeader = computeUpdateExpected(
 		c.partitionCount, c.prefix, c.nodes, c.expected, c.leader)
+
+	completed := map[string]string{}
+	for _, update := range output.updateExpected {
+		completed[update.key] = update.value
+	}
+	c.updateExpectedState.completed = completed
+}
+
+func cloneExpectedState(expected []expectedState) []expectedState {
+	result := make([]expectedState, len(expected))
+	copy(result, expected)
+	return result
+}
+
+func expectedEquals(a, b []expectedState) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *core) partitionIsRunnable(partitionID PartitionID) bool {
+	_, existed := c.nodes[c.selfNodeID]
+	if existed && c.expected[partitionID].nodeID == c.selfNodeID && c.current[partitionID].nodeID == 0 {
+		return true
+	}
+	return false
+}
+
+func (c *core) computeCurrentPartitionOutput(output *runOutput) {
+	output.updateCurrentLeaseID = c.leaseID
+	for partitionID := PartitionID(0); partitionID < c.partitionCount; partitionID++ {
+		if c.partitionIsRunnable(partitionID) {
+			output.updateCurrent = append(output.updateCurrent, updateCurrent{
+				key:   fmt.Sprintf("%s/current/%d", c.prefix, partitionID),
+				value: fmt.Sprintf("%d", c.selfNodeID),
+			})
+		}
+	}
+}
+
+func (c *core) computeCurrentPartitionActions(output *runOutput) {
+	if c.updateCurrentState.requesting {
+		return
+	}
+
+	if c.leaseID == 0 {
+		return
+	}
+
+	if len(c.updateCurrentState.completed) > 0 {
+		return
+	}
+
+	if c.leaseID == c.updateCurrentState.leaseID &&
+		expectedEquals(c.expected, c.updateCurrentState.expected) {
+		return
+	}
+
+	count := 0
+	for partitionID := PartitionID(0); partitionID < c.partitionCount; partitionID++ {
+		if c.partitionIsRunnable(partitionID) {
+			count++
+		}
+	}
+
+	if count == 0 {
+		return
+	}
+
+	c.updateCurrentState = updateCurrentState{
+		requesting: true,
+		leaseID:    c.leaseID,
+		expected:   cloneExpectedState(c.expected),
+	}
+
+	c.computeCurrentPartitionOutput(output)
+
+	completed := map[completedCurrentKey]struct{}{}
+	for _, update := range output.updateCurrent {
+		completed[completedCurrentKey{
+			key:   update.key,
+			value: update.value,
+		}] = struct{}{}
+	}
+	c.updateCurrentState.completed = completed
 }
 
 func (c *core) computeActions() runOutput {
 	var output runOutput
 	c.computePutNodeActions(&output)
 	c.computeExpectedPartitionActions(&output)
+	c.computeCurrentPartitionActions(&output)
 	return output
 }
 
@@ -341,25 +494,85 @@ func (c *core) handleFinishUpdateExpected(err error) {
 	c.updateExpectedState.requesting = false
 
 	if err != nil {
+		c.updateExpectedState.completed = nil
 		c.updateExpectedTimerRunning = true
 		c.updateExpectedTimer.Reset()
 	}
 }
 
 func (c *core) resetUpdateExpectedState() {
-	c.updateExpectedState = updateExpectedState{
-		requesting: false,
-	}
+	c.updateExpectedState = updateExpectedState{}
 }
 
-func (c *core) handleExpectedEvents(ev expectedEvents) {
-	for _, e := range ev.events {
-		c.expected[e.partitionID] = expectedState{
-			nodeID: e.nodeID,
+func partitionIDFromKey(prefix, key, partition string) PartitionID {
+	v := strings.TrimPrefix(key, fmt.Sprintf("%s/%s/", prefix, partition))
+	id, err := strconv.Atoi(v)
+	if err != nil {
+		panic(err)
+	}
+	return PartitionID(id)
+}
+
+func expectedPartitionIDFromKey(prefix, key string) PartitionID {
+	return partitionIDFromKey(prefix, key, "expected")
+}
+
+func currentPartitionIDFromKey(prefix, key string) PartitionID {
+	return partitionIDFromKey(prefix, key, "current")
+}
+
+func nodeIDFromValue(value string) NodeID {
+	id, err := strconv.Atoi(value)
+	if err != nil {
+		panic(err)
+	}
+	return NodeID(id)
+}
+
+func (c *core) handleExpectedEvents(events []expectedEvent) {
+	for _, e := range events {
+		partitionID := expectedPartitionIDFromKey(c.prefix, e.key)
+		nodeID := nodeIDFromValue(e.value)
+
+		c.expected[partitionID] = expectedState{
+			nodeID: nodeID,
 		}
+
+		// TODO delete missing value
+		delete(c.updateExpectedState.completed, e.key)
 	}
 }
 
+func (c *core) handleFinishUpdateCurrent(err error) {
+	c.updateCurrentState.requesting = false
+
+	if err != nil {
+		c.updateCurrentState.completed = nil
+		c.updateCurrentTimer.Reset()
+	}
+}
+
+func (c *core) resetUpdateCurrentState() {
+	c.updateCurrentState = updateCurrentState{}
+}
+
+func (c *core) handleCurrentEvents(events []currentEvent) {
+	for _, e := range events {
+		partitionID := currentPartitionIDFromKey(c.prefix, e.key)
+		nodeID := nodeIDFromValue(e.value)
+		c.current[partitionID] = currentState{
+			nodeID: nodeID,
+		}
+		// TODO check leaseID
+
+		delete(c.updateCurrentState.completed, completedCurrentKey{
+			key:   e.key,
+			value: e.value,
+		})
+	}
+}
+
+//gocyclo:ignore
 func (c *core) run(ctx context.Context) runOutput {
 	select {
 	case leaseID := <-c.leaseChan:
@@ -386,7 +599,16 @@ func (c *core) run(ctx context.Context) runOutput {
 		c.resetUpdateExpectedState()
 
 	case ev := <-c.expectedEventsChan:
-		c.handleExpectedEvents(ev)
+		c.handleExpectedEvents(ev.events)
+
+	case err := <-c.finishCurrentChan:
+		c.handleFinishUpdateCurrent(err)
+
+	case <-c.updateCurrentTimer.Chan():
+		c.resetUpdateCurrentState()
+
+	case ev := <-c.currentEventsChan:
+		c.handleCurrentEvents(ev.events)
 
 	case <-ctx.Done():
 	}
@@ -420,10 +642,22 @@ func (c *core) finishUpdateExpected(err error) {
 	c.finishExpectedChan <- err
 }
 
+func (c *core) finishUpdateCurrent(err error) {
+	c.finishCurrentChan <- err
+}
+
 func (c *core) recvExpectedPartitionEvents(events []expectedEvent) {
 	ev := make([]expectedEvent, len(events))
 	copy(ev, events)
 	c.expectedEventsChan <- expectedEvents{
+		events: ev,
+	}
+}
+
+func (c *core) recvCurrentPartitionEvents(events []currentEvent) {
+	ev := make([]currentEvent, len(events))
+	copy(ev, events)
+	c.currentEventsChan <- currentEvents{
 		events: ev,
 	}
 }
