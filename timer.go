@@ -37,3 +37,35 @@ func defaultTimer(duration time.Duration) *simpleTimer {
 		timer:    timer,
 	}
 }
+
+type wrappedTimer struct {
+	running bool
+	timer   Timer
+}
+
+func newWrappedTimer(timer Timer) *wrappedTimer {
+	return &wrappedTimer{
+		running: false,
+		timer:   timer,
+	}
+}
+
+func (t *wrappedTimer) stopIfRunning() {
+	if t.running {
+		t.running = false
+		t.timer.Stop()
+	}
+}
+
+func (t *wrappedTimer) reset() {
+	t.running = true
+	t.timer.Reset()
+}
+
+func (t *wrappedTimer) expired() {
+	t.running = false
+}
+
+func (t *wrappedTimer) getChan() <-chan time.Time {
+	return t.timer.Chan()
+}

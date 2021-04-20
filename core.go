@@ -145,14 +145,9 @@ type core struct {
 	currentEventsChan chan currentEvents
 
 	// Timer
-	putNodeTimerRunning bool
-	putNodeTimer        Timer
-
-	updateExpectedTimerRunning bool
-	updateExpectedTimer        Timer
-
-	updateCurrentTimerRunning bool
-	updateCurrentTimer        Timer
+	putNodeTimer        *wrappedTimer
+	updateExpectedTimer *wrappedTimer
+	updateCurrentTimer  *wrappedTimer
 
 	// state
 	leaseID      LeaseID
@@ -191,9 +186,9 @@ func newCore(nodeID NodeID, prefix string, info string, partitionCount Partition
 		currentEventsChan: make(chan currentEvents, opts.chanSize),
 
 		// timer
-		putNodeTimer:        opts.putNodeTimer,
-		updateExpectedTimer: opts.updateExpectedTimer,
-		updateCurrentTimer:  opts.updateCurrentTimer,
+		putNodeTimer:        newWrappedTimer(opts.putNodeTimer),
+		updateExpectedTimer: newWrappedTimer(opts.updateExpectedTimer),
+		updateCurrentTimer:  newWrappedTimer(opts.updateCurrentTimer),
 
 		// state
 		leaseID: 0,
@@ -294,11 +289,7 @@ func (c *core) computePutNodeActions(output *runOutput) {
 		leaseID:    c.leaseID,
 	}
 
-	if c.putNodeTimerRunning {
-		// TODO Check if missing
-		// c.putNodeTimerRunning = false
-		c.putNodeTimer.Stop()
-	}
+	c.putNodeTimer.stopIfRunning()
 
 	output.needPutNode = true
 	output.putNodeCmd = computePutNodeCmd(c.prefix, c.selfNodeID, c.selfNodeInfo, c.leaseID)
@@ -366,10 +357,7 @@ func (c *core) computeExpectedPartitionActions(output *runOutput) {
 		nodes:      cloneNodes(c.nodes),
 	}
 
-	if c.updateExpectedTimerRunning {
-		// TODO
-		c.updateExpectedTimer.Stop()
-	}
+	c.updateExpectedTimer.stopIfRunning()
 
 	output.updateExpected, output.updateExpectedLeader = computeUpdateExpected(
 		c.partitionCount, c.prefix, c.nodes, c.expected, c.leader)
@@ -468,11 +456,7 @@ func (c *core) computeCurrentPartitionActions(output *runOutput) {
 		expected:   cloneExpectedState(c.expected),
 	}
 
-	if c.updateCurrentTimerRunning {
-		// TODO
-		// c.updateCurrentTimerRunning = false
-		c.updateCurrentTimer.Stop()
-	}
+	c.updateCurrentTimer.stopIfRunning()
 
 	c.computeCurrentPartitionOutput(output)
 	c.setCompletedCurrentSet(output.updateCurrent)
@@ -490,13 +474,12 @@ func (c *core) handleFinishPutNode(err error) {
 	c.putNodeState.requesting = false
 
 	if err != nil {
-		c.putNodeTimerRunning = true
-		c.putNodeTimer.Reset()
+		c.putNodeTimer.reset()
 	}
 }
 
-func (c *core) handleNodeEvents(ev nodeEvents) {
-	for _, e := range ev.events {
+func (c *core) handleNodeEvents(events []nodeEvent) {
+	for _, e := range events {
 		if e.eventType == eventTypePut {
 			c.nodes[e.nodeID] = struct{}{}
 		} else {
@@ -510,8 +493,7 @@ func (c *core) handleFinishUpdateExpected(err error) {
 
 	if err != nil {
 		c.updateExpectedState.completed = nil
-		c.updateExpectedTimerRunning = true
-		c.updateExpectedTimer.Reset()
+		c.updateExpectedTimer.reset()
 	}
 }
 
@@ -562,8 +544,7 @@ func (c *core) handleFinishUpdateCurrent(err error) {
 
 	if err != nil {
 		c.updateCurrentState.completed = nil
-		c.updateCurrentTimerRunning = true
-		c.updateCurrentTimer.Reset()
+		c.updateCurrentTimer.reset()
 	}
 }
 
@@ -602,15 +583,15 @@ func (c *core) run(ctx context.Context) runOutput {
 	case leaseID := <-c.leaseChan:
 		c.leaseID = leaseID
 
-	case <-c.putNodeTimer.Chan():
-		c.putNodeTimerRunning = false
+	case <-c.putNodeTimer.getChan():
+		c.putNodeTimer.expired()
 		c.resetPutNodeState()
 
 	case err := <-c.finishPutNodeChan:
 		c.handleFinishPutNode(err)
 
 	case ev := <-c.nodeEventsChan:
-		c.handleNodeEvents(ev)
+		c.handleNodeEvents(ev.events)
 
 	case leader := <-c.leaderChan:
 		c.leader = leader
@@ -618,8 +599,8 @@ func (c *core) run(ctx context.Context) runOutput {
 	case err := <-c.finishExpectedChan:
 		c.handleFinishUpdateExpected(err)
 
-	case <-c.updateExpectedTimer.Chan():
-		c.updateExpectedTimerRunning = false
+	case <-c.updateExpectedTimer.getChan():
+		c.updateExpectedTimer.expired()
 		c.resetUpdateExpectedState()
 
 	case ev := <-c.expectedEventsChan:
@@ -628,8 +609,8 @@ func (c *core) run(ctx context.Context) runOutput {
 	case err := <-c.finishCurrentChan:
 		c.handleFinishUpdateCurrent(err)
 
-	case <-c.updateCurrentTimer.Chan():
-		c.updateCurrentTimerRunning = false
+	case <-c.updateCurrentTimer.getChan():
+		c.updateCurrentTimer.expired()
 		c.resetUpdateCurrentState()
 
 	case ev := <-c.currentEventsChan:

@@ -200,6 +200,34 @@ func TestCore_Run__Finish_Put_Node_Error__Update_Lease__Stop_Timer(t *testing.T)
 	}, output)
 }
 
+func TestCore_Run__Finish_Put_Node_Error__Update_Lease_Second_Times__Not_Stop_Timer(t *testing.T) {
+	t.Parallel()
+
+	timer := newTimerMock()
+	c := newCoreWithPutNodeTimer(80, "/example", timer)
+	ctx := newContext()
+
+	c.updateLeaseID(1500)
+	_ = c.run(ctx)
+
+	c.finishPutNode(errors.New("put-node-error"))
+	timer.ResetFunc = func() {}
+	_ = c.run(ctx)
+
+	timer.StopFunc = func() {}
+
+	c.updateLeaseID(2500)
+	_ = c.run(ctx)
+
+	c.finishPutNode(nil)
+	_ = c.run(ctx)
+
+	c.updateLeaseID(2800)
+	_ = c.run(ctx)
+
+	assert.Equal(t, 1, len(timer.StopCalls()))
+}
+
 func TestCore_Run__Finish_Put_Node_OK__After_Update_Lease__Put_Node_Again(t *testing.T) {
 	t.Parallel()
 
