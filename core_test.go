@@ -1301,6 +1301,219 @@ func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events__After_Expected
 	}, output)
 }
 
+func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events_With_Wrong_LeaseID__After_Expected_Changed__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.updateLeaseID(1234)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{
+			eventType: eventTypePut,
+			nodeID:    12,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/0",
+			value:     "12",
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/1",
+			value:     "9",
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/2",
+			value:     "12",
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/1",
+			value:     "12",
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvCurrentPartitionEvents([]currentEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/current/0",
+			value:     "12",
+			leaseID:   3333,
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/current/2",
+			value:     "12",
+			leaseID:   1234,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateCurrent(nil)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events__Update_LeaseID__Without_Deleted_Current__Do_Nothing(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.updateLeaseID(1234)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{
+			eventType: eventTypePut,
+			nodeID:    12,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/0",
+			value:     "12",
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/1",
+			value:     "9",
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/2",
+			value:     "12",
+		},
+	})
+	_ = c.run(ctx)
+
+	c.updateLeaseID(4444)
+	_ = c.run(ctx)
+
+	c.recvCurrentPartitionEvents([]currentEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/current/0",
+			value:     "12",
+			leaseID:   1234,
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/current/2",
+			value:     "12",
+			leaseID:   1234,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateCurrent(nil)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{}, output)
+}
+
+func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events__Update_LeaseID__With_Deleted_Current__Update_Current(t *testing.T) {
+	t.Parallel()
+
+	c := newCoreWithPartitions(12, "/sample", 3)
+	ctx := newContext()
+
+	c.updateLeaseID(1234)
+	_ = c.run(ctx)
+
+	c.recvNodeEvents([]nodeEvent{
+		{
+			eventType: eventTypePut,
+			nodeID:    12,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvExpectedPartitionEvents([]expectedEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/0",
+			value:     "12",
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/1",
+			value:     "9",
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/expected/2",
+			value:     "12",
+		},
+	})
+	_ = c.run(ctx)
+
+	c.updateLeaseID(4444)
+	_ = c.run(ctx)
+
+	c.recvCurrentPartitionEvents([]currentEvent{
+		{
+			eventType: eventTypePut,
+			key:       "/sample/current/0",
+			value:     "12",
+			leaseID:   1234,
+		},
+		{
+			eventType: eventTypePut,
+			key:       "/sample/current/2",
+			value:     "12",
+			leaseID:   1234,
+		},
+	})
+	_ = c.run(ctx)
+
+	c.recvCurrentPartitionEvents([]currentEvent{
+		{
+			eventType: eventTypeDelete,
+			key:       "/sample/current/0",
+		},
+		{
+			eventType: eventTypeDelete,
+			key:       "/sample/current/2",
+		},
+	})
+	_ = c.run(ctx)
+
+	c.finishUpdateCurrent(nil)
+	output := c.run(ctx)
+
+	assert.Equal(t, runOutput{
+		updateCurrentLeaseID: 4444,
+		updateCurrent: []updateCurrent{
+			{
+				key:   "/sample/current/0",
+				value: "12",
+			},
+			{
+				key:   "/sample/current/2",
+				value: "12",
+			},
+		},
+	}, output)
+}
+
 func TestCore_Run__Finish_Update_Current_Error__Set_Timer(t *testing.T) {
 	t.Parallel()
 
@@ -1449,9 +1662,12 @@ func TestCore_Run__Finish_Update_Current_Error__Lease_Changed__Stop_Timer_And_Up
 	c.finishUpdateCurrent(errors.New("finish-update-error"))
 	_ = c.run(ctx)
 
+	timer.StopFunc = func() {}
+
 	c.updateLeaseID(2222)
 	output := c.run(ctx)
 
+	assert.Equal(t, 1, len(timer.StopCalls()))
 	assert.Equal(t, runOutput{
 		updateCurrentLeaseID: 2222,
 		updateCurrent: []updateCurrent{

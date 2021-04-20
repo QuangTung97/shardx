@@ -78,7 +78,7 @@ type updateExpectedState struct {
 	requesting bool
 	leader     leaderInfo
 	nodes      map[NodeID]struct{}
-	completed  map[string]string
+	completed  map[string]struct{}
 }
 
 type completedCurrentKey struct {
@@ -151,7 +151,8 @@ type core struct {
 	updateExpectedTimerRunning bool
 	updateExpectedTimer        Timer
 
-	updateCurrentTimer Timer
+	updateCurrentTimerRunning bool
+	updateCurrentTimer        Timer
 
 	// state
 	leaseID      LeaseID
@@ -294,7 +295,8 @@ func (c *core) computePutNodeActions(output *runOutput) {
 	}
 
 	if c.putNodeTimerRunning {
-		c.putNodeTimerRunning = false
+		// TODO Check if missing
+		// c.putNodeTimerRunning = false
 		c.putNodeTimer.Stop()
 	}
 
@@ -365,15 +367,16 @@ func (c *core) computeExpectedPartitionActions(output *runOutput) {
 	}
 
 	if c.updateExpectedTimerRunning {
+		// TODO
 		c.updateExpectedTimer.Stop()
 	}
 
 	output.updateExpected, output.updateExpectedLeader = computeUpdateExpected(
 		c.partitionCount, c.prefix, c.nodes, c.expected, c.leader)
 
-	completed := map[string]string{}
+	completed := map[string]struct{}{}
 	for _, update := range output.updateExpected {
-		completed[update.key] = update.value
+		completed[update.key] = struct{}{}
 	}
 	c.updateExpectedState.completed = completed
 }
@@ -416,7 +419,19 @@ func (c *core) computeCurrentPartitionOutput(output *runOutput) {
 	}
 }
 
+func (c *core) setCompletedCurrentSet(updateList []updateCurrent) {
+	completed := map[completedCurrentKey]struct{}{}
+	for _, update := range updateList {
+		completed[completedCurrentKey{
+			key:   update.key,
+			value: update.value,
+		}] = struct{}{}
+	}
+	c.updateCurrentState.completed = completed
+}
+
 func (c *core) computeCurrentPartitionActions(output *runOutput) {
+	// CHECKING
 	if c.updateCurrentState.requesting {
 		return
 	}
@@ -445,22 +460,22 @@ func (c *core) computeCurrentPartitionActions(output *runOutput) {
 		return
 	}
 
+	// DOING
+
 	c.updateCurrentState = updateCurrentState{
 		requesting: true,
 		leaseID:    c.leaseID,
 		expected:   cloneExpectedState(c.expected),
 	}
 
-	c.computeCurrentPartitionOutput(output)
-
-	completed := map[completedCurrentKey]struct{}{}
-	for _, update := range output.updateCurrent {
-		completed[completedCurrentKey{
-			key:   update.key,
-			value: update.value,
-		}] = struct{}{}
+	if c.updateCurrentTimerRunning {
+		// TODO
+		// c.updateCurrentTimerRunning = false
+		c.updateCurrentTimer.Stop()
 	}
-	c.updateCurrentState.completed = completed
+
+	c.computeCurrentPartitionOutput(output)
+	c.setCompletedCurrentSet(output.updateCurrent)
 }
 
 func (c *core) computeActions() runOutput {
@@ -538,7 +553,6 @@ func (c *core) handleExpectedEvents(events []expectedEvent) {
 			nodeID: nodeID,
 		}
 
-		// TODO delete missing value
 		delete(c.updateExpectedState.completed, e.key)
 	}
 }
@@ -548,6 +562,7 @@ func (c *core) handleFinishUpdateCurrent(err error) {
 
 	if err != nil {
 		c.updateCurrentState.completed = nil
+		c.updateCurrentTimerRunning = true
 		c.updateCurrentTimer.Reset()
 	}
 }
@@ -559,16 +574,25 @@ func (c *core) resetUpdateCurrentState() {
 func (c *core) handleCurrentEvents(events []currentEvent) {
 	for _, e := range events {
 		partitionID := currentPartitionIDFromKey(c.prefix, e.key)
-		nodeID := nodeIDFromValue(e.value)
-		c.current[partitionID] = currentState{
-			nodeID: nodeID,
-		}
-		// TODO check leaseID
+		if e.eventType == eventTypePut {
+			if e.leaseID != c.updateCurrentState.leaseID {
+				continue
+			}
 
-		delete(c.updateCurrentState.completed, completedCurrentKey{
-			key:   e.key,
-			value: e.value,
-		})
+			nodeID := nodeIDFromValue(e.value)
+			c.current[partitionID] = currentState{
+				nodeID: nodeID,
+			}
+
+			delete(c.updateCurrentState.completed, completedCurrentKey{
+				key:   e.key,
+				value: e.value,
+			})
+		} else {
+			c.current[partitionID] = currentState{
+				nodeID: 0,
+			}
+		}
 	}
 }
 
@@ -605,6 +629,7 @@ func (c *core) run(ctx context.Context) runOutput {
 		c.handleFinishUpdateCurrent(err)
 
 	case <-c.updateCurrentTimer.Chan():
+		c.updateCurrentTimerRunning = false
 		c.resetUpdateCurrentState()
 
 	case ev := <-c.currentEventsChan:
