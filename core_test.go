@@ -258,8 +258,8 @@ func TestCore_Run__Recv_Node_Events__Not_Leader__Do_Nothing(t *testing.T) {
 	ctx := newContext()
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -285,8 +285,8 @@ func TestCore_Run__SetLeader__With_2_Nodes__Update_Expected_Partitions(t *testin
 	ctx := newContext()
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -325,8 +325,8 @@ func TestCore_Run__Recv_Node_Events__With_Leader__Update_Expected_Partitions(t *
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -362,8 +362,8 @@ func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Not_Yet_Recv_Expected_E
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -371,7 +371,7 @@ func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Not_Yet_Recv_Expected_E
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 8, eventType: eventTypeDelete},
+		{key: "/sample/node/8", eventType: eventTypeDelete},
 	})
 	output := c.run(ctx)
 
@@ -388,8 +388,8 @@ func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Not_Yet_Finish_Update_E
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -413,7 +413,7 @@ func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Not_Yet_Finish_Update_E
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 8, eventType: eventTypeDelete},
+		{key: "/sample/node/8", eventType: eventTypeDelete},
 	})
 	output := c.run(ctx)
 
@@ -430,8 +430,8 @@ func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Reallocate_Expected_Par
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -458,7 +458,7 @@ func TestCore_Run__Recv_Node_Event_Deleted__With_Leader__Reallocate_Expected_Par
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 8, eventType: eventTypeDelete},
+		{key: "/sample/node/8", eventType: eventTypeDelete},
 	})
 	output := c.run(ctx)
 
@@ -490,13 +490,13 @@ func TestCore_Run__Recv_Node_Events__Second_Times__First_Times_Not_Yet_Completed
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 9, eventType: eventTypePut},
+		{key: "/sample/node/9", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -513,8 +513,8 @@ func TestCore_Run__Finish_Update_Expected__Do_Nothing(t *testing.T) {
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -536,8 +536,8 @@ func TestCore_Run__Finish_Update_Expected_Error__Set_Timer(t *testing.T) {
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -562,8 +562,8 @@ func TestCore_Run__Finish_Update_Expected_Error__Set_Timer__Then_Timer_Expired__
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -609,8 +609,8 @@ func TestCore_Run__Finish_Update_Expected_Error__Recv_Node_Event__Stop_Timer_And
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -622,7 +622,7 @@ func TestCore_Run__Finish_Update_Expected_Error__Recv_Node_Event__Stop_Timer_And
 	timer.StopFunc = func() {}
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 9, eventType: eventTypePut},
+		{key: "/sample/node/9", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -682,8 +682,8 @@ func TestCore_Run__Recv_Node_Events_Second_Times__After_Finish_Update_Expected__
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -709,7 +709,7 @@ func TestCore_Run__Recv_Node_Events_Second_Times__After_Finish_Update_Expected__
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 13, eventType: eventTypePut},
+		{key: "/sample/node/13", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -737,8 +737,8 @@ func TestCore_Run__Leader_Changed__Reallocate_Partitions(t *testing.T) {
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -765,7 +765,7 @@ func TestCore_Run__Leader_Changed__Reallocate_Partitions(t *testing.T) {
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 13, eventType: eventTypePut},
+		{key: "/sample/node/13", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -793,8 +793,8 @@ func TestCore_Run__Recv_Events__When_Not_Yet_Finish_Update_Expected__Do_Nothing(
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -818,7 +818,7 @@ func TestCore_Run__Recv_Events__When_Not_Yet_Finish_Update_Expected__Do_Nothing(
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 13, eventType: eventTypePut},
+		{key: "/sample/node/13", eventType: eventTypePut},
 	})
 	output := c.run(ctx)
 
@@ -835,8 +835,8 @@ func TestCore_Run__Leader_Changed__After_Already_Finish_Update_And_Recv_Expected
 	_ = c.run(ctx)
 
 	c.recvNodeEvents([]nodeEvent{
-		{nodeID: 10, eventType: eventTypePut},
-		{nodeID: 8, eventType: eventTypePut},
+		{key: "/sample/node/10", eventType: eventTypePut},
+		{key: "/sample/node/8", eventType: eventTypePut},
 	})
 	_ = c.run(ctx)
 
@@ -880,7 +880,7 @@ func TestCore_Run__Recv_Self_Expected_Event__Update_Current_Partition(t *testing
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -914,7 +914,7 @@ func TestCore_Run__Recv_Self_Expected_Event__Without_LeaseID__Do_Nothing(t *test
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -953,7 +953,7 @@ func TestCore_Run__Recv_Self_Expected_Event__Update_Multi_Current_Partitions(t *
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1004,7 +1004,7 @@ func TestCore_Run__Recv_Self_Expected_Events__While_Updating_Current_Partitions_
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1057,7 +1057,7 @@ func TestCore_Run__Finish_Update_Current__Not_Change_Anything__Do_Nothing(t *tes
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1099,7 +1099,7 @@ func TestCore_Run__Recv_Current_Events__Do_Nothing(t *testing.T) {
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1153,7 +1153,7 @@ func TestCore_Run__Recv_Current_Events__Then_Recv_Another_Expected_Events__Not_F
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1216,7 +1216,7 @@ func TestCore_Run__Recv_Another_Expected_Events__Then_Finish_Update_Current__Not
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1266,7 +1266,7 @@ func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events__After_Expected
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1341,7 +1341,7 @@ func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events_With_Wrong_Leas
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1408,7 +1408,7 @@ func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events__Update_LeaseID
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1469,7 +1469,7 @@ func TestCore_Run__Finish_Update_Current_And_Recv_Current_Events__Update_LeaseID
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1555,7 +1555,7 @@ func TestCore_Run__Finish_Update_Current_Error__Set_Timer(t *testing.T) {
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1601,7 +1601,7 @@ func TestCore_Run__Finish_Update_Current_Error__Timer_Expired__Retry_Update_Curr
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1661,7 +1661,7 @@ func TestCore_Run__Finish_Update_Current_Error__Lease_Changed__Stop_Timer_And_Up
 	c.recvNodeEvents([]nodeEvent{
 		{
 			eventType: eventTypePut,
-			nodeID:    12,
+			key:       "/sample/node/12",
 		},
 	})
 	_ = c.run(ctx)
@@ -1812,6 +1812,19 @@ func TestNodeIDFromValue_Panic(t *testing.T) {
 	t.Parallel()
 	assert.Panics(t, func() {
 		nodeIDFromValue("sample")
+	})
+}
+
+func TestNodeIDFromKey_OK(t *testing.T) {
+	t.Parallel()
+	v := nodeIDFromKey("/example", "/example/node/8")
+	assert.Equal(t, NodeID(8), v)
+}
+
+func TestNodeIDFromKey_Panic(t *testing.T) {
+	t.Parallel()
+	assert.Panics(t, func() {
+		nodeIDFromKey("/sample/node/", "/sample/node/home")
 	})
 }
 

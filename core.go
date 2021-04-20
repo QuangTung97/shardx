@@ -24,8 +24,8 @@ type leaderInfo struct {
 }
 
 type nodeEvent struct {
-	nodeID    NodeID
 	eventType eventType
+	key       string
 }
 
 type nodeEvents struct {
@@ -480,10 +480,11 @@ func (c *core) handleFinishPutNode(err error) {
 
 func (c *core) handleNodeEvents(events []nodeEvent) {
 	for _, e := range events {
+		nodeID := nodeIDFromKey(c.prefix, e.key)
 		if e.eventType == eventTypePut {
-			c.nodes[e.nodeID] = struct{}{}
+			c.nodes[nodeID] = struct{}{}
 		} else {
-			delete(c.nodes, e.nodeID)
+			delete(c.nodes, nodeID)
 		}
 	}
 }
@@ -520,6 +521,15 @@ func currentPartitionIDFromKey(prefix, key string) PartitionID {
 
 func nodeIDFromValue(value string) NodeID {
 	id, err := strconv.Atoi(value)
+	if err != nil {
+		panic(err)
+	}
+	return NodeID(id)
+}
+
+func nodeIDFromKey(prefix string, key string) NodeID {
+	v := strings.TrimPrefix(key, fmt.Sprintf("%s/node/", prefix))
+	id, err := strconv.Atoi(v)
 	if err != nil {
 		panic(err)
 	}
